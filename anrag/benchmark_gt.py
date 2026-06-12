@@ -174,7 +174,7 @@ def load_hotpotqa(path: str | Path) -> tuple[dict[str, list[ParsedBlock]], list[
                     for title, sent_id in zip(
                         item.get("supporting_facts", {}).get("title", []),
                         item.get("supporting_facts", {}).get("sent_id", []),
-                ],
+                    ),
                 benchmark_format="hotpotqa",
             )
         )
