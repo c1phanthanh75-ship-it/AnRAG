@@ -1,4 +1,4 @@
-from __future__ import annotations#
+from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass, field
@@ -299,6 +299,7 @@ class AblationEvalResult:
     def recall_at_k(self) -> float:
         return self.metrics.recall_at_k
 
+
 def _retrieve(
     retriever: AnchorRetriever,
     spec: AblationSpec,
@@ -308,8 +309,9 @@ def _retrieve(
     *,
     rewrite_query: bool = False,
 ) -> tuple[list[str], float]:
+    # FIX: resolve doc_ids per-question so retrieval is scoped correctly
+    # (resolves merge conflict — fa13e49 version is correct)
     doc_ids = split_doc_ids(question.doc_id) or None
-
     common = {
         "budget_tokens": budget_tokens,
         "top_k": top_k,
@@ -317,16 +319,15 @@ def _retrieve(
         "doc_ids": doc_ids,
         "rewrite_query": rewrite_query,
     }
-
     if spec.retrieval_mode == "baseline":
         result = retriever.plain_rag(question.question, **common)
     elif spec.retrieval_mode == "anchor_only":
         result = retriever.anchor_only(question.question, **common)
     else:
         result = retriever.retrieve(question.question, **common)
-
     latency = float(result.trace.get("latency_seconds", 0.0))
     return [chunk.id for chunk in result.contexts], latency
+
 
 def _evaluate_spec(
     spec: AblationSpec,
