@@ -296,7 +296,7 @@ def _retrieve(
     *,
     rewrite_query: bool = False,
 ) -> tuple[list[str], float]:
-    doc_ids = [question.doc_id] if question.doc_id else None
+    doc_ids = None
     common = {
         "budget_tokens": budget_tokens,
         "top_k": top_k,
