@@ -169,7 +169,11 @@ def load_hotpotqa(path: str | Path) -> tuple[dict[str, list[ParsedBlock]], list[
                 question=item["question"],
                 doc_id=doc_id,
                 query_id=qid,
-                gold_passage_keys=[(str(title), int(idx)) for title, idx in item["supporting_facts"]],
+                gold_passage_keys=[
+                    (str(entry[0]), int(entry[1]))
+                    for entry in item.get("supporting_facts") or []
+                    if isinstance(entry, (list, tuple)) and len(entry) >= 2
+                ],
                 benchmark_format="hotpotqa",
             )
         )
