@@ -1,0 +1,1 @@
+{"_id": "sample1", "question": "When was Acme founded?", "context": [["Acme Corp", ["Acme was founded in 1999.", "It sells industrial tools."]], ["History", ["The company expanded in 2005."]]], "supporting_facts": [["Acme Corp", 0]]}

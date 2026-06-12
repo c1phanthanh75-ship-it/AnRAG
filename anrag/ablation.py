@@ -8,11 +8,14 @@ from typing import Any, Callable
 
 from anrag.benchmark import BenchmarkParser
 from anrag.benchmark_gt import (
+    align_questions_with_documents,
     build_relevance_map,
     detect_benchmark_format,
     load_anrag_questions,
     load_official_benchmark,
     resolve_gold_official,
+    resolve_run_format,
+    split_doc_ids,
 )
 from anrag.benchmark_types import BenchmarkFormat, BenchmarkQuestion
 from anrag.chunking import ChunkingMode
@@ -52,12 +55,20 @@ class AblationTiming:
 
 
 @dataclass
+class GoldSanityReport:
+    zero_gold_count: int
+    avg_gold_size: float
+    question_count: int
+
+
+@dataclass
 class AblationScore:
     name: str
     key: str
     metrics: RetrievalMetrics
     query_count: int
     timing: AblationTiming
+    gold_sanity: GoldSanityReport
 
     @property
     def recall_at_k(self) -> float:
@@ -99,6 +110,7 @@ class AblationReport:
     questions: list[BenchmarkQuestion] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        full_score = next((score for score in self.scores if score.key == "full"), None)
         return {
             "summary": {
                 "primary_metric": "recall_at_k",
@@ -106,10 +118,8 @@ class AblationReport:
                 "anchor_contribution_pct": self.contributions.anchor_pct,
                 "expansion_contribution_pct": self.contributions.expansion_pct,
                 "total_quality_gain": self.contributions.total_gain,
-                "full_anrag_metrics": next(
-                    (score.metrics.to_dict() for score in self.scores if score.key == "full"),
-                    {},
-                ),
+                "full_anrag_metrics": full_score.metrics.to_dict() if full_score else {},
+                "gold_sanity": asdict(full_score.gold_sanity) if full_score else {},
             },
             "contributions": asdict(self.contributions),
             "time_cost": {
@@ -129,6 +139,7 @@ class AblationReport:
                     "query_count": score.query_count,
                     "timing": asdict(score.timing),
                     "metrics": score.metrics.to_dict(),
+                    "gold_sanity": asdict(score.gold_sanity),
                 }
                 for score in self.scores
             ],
@@ -137,6 +148,7 @@ class AblationReport:
                     "question": item.question,
                     "doc_id": item.doc_id,
                     "gold_chunk_ids": sorted(item.gold_chunk_ids),
+                    "gold_doc_ids": sorted(item.gold_doc_ids),
                 }
                 for item in self.questions
             ],
@@ -189,7 +201,7 @@ def load_questions(
 
     path = Path(path)
     fmt = benchmark_format or detect_benchmark_format(path)
-    if fmt in {"hotpotqa", "beir", "kilt"}:
+    if fmt in {"hotpotqa", "beir", "kilt", "ragbench"}:
         _, questions = load_official_benchmark(path, fmt=fmt)
         return questions
     return load_anrag_questions(path)
@@ -281,6 +293,7 @@ def compute_time_overhead(
 class AblationEvalResult:
     metrics: RetrievalMetrics
     timing: AblationTiming
+    gold_sanity: GoldSanityReport
 
     @property
     def recall_at_k(self) -> float:
@@ -296,7 +309,11 @@ def _retrieve(
     *,
     rewrite_query: bool = False,
 ) -> tuple[list[str], float]:
+<<<<<<< HEAD
     doc_ids = None
+=======
+    doc_ids = split_doc_ids(question.doc_id) or None
+>>>>>>> fa13e49 (Fix gold chunk benchmark AnRAG)
     common = {
         "budget_tokens": budget_tokens,
         "top_k": top_k,
@@ -351,9 +368,11 @@ def _evaluate_spec(
 
     metric_rows: list[RetrievalMetrics] = []
     query_latencies: list[float] = []
+    gold_sizes: list[int] = []
     fetch_k = max(top_k, retrieval_depth, 20)
     for question in questions:
         gold_ids = resolve_gold_ids(question, store)
+        gold_sizes.append(len(gold_ids))
         relevance = build_relevance_map(question, store, gold_ids)
         retrieved_ids, latency = _retrieve(
             retriever,
@@ -382,7 +401,16 @@ def _evaluate_spec(
         retrieval_p95_seconds=round(_percentile(query_latencies, 0.95), 3),
         total_seconds=round(time.perf_counter() - run_start, 3),
     )
-    return AblationEvalResult(metrics=average_metrics(metric_rows), timing=timing)
+    gold_sanity = GoldSanityReport(
+        zero_gold_count=sum(1 for size in gold_sizes if size == 0),
+        avg_gold_size=round(sum(gold_sizes) / len(gold_sizes), 4) if gold_sizes else 0.0,
+        question_count=len(gold_sizes),
+    )
+    return AblationEvalResult(
+        metrics=average_metrics(metric_rows),
+        timing=timing,
+        gold_sanity=gold_sanity,
+    )
 
 
 def run_ablations_from_documents(
@@ -403,6 +431,7 @@ def run_ablations_from_documents(
     gold_resolver = resolve_gold_ids or resolve_gold_official
     if questions is None:
         questions = load_questions(qa_path, documents, benchmark_format=benchmark_format)
+    questions = align_questions_with_documents(questions, documents)
 
     store_path = sqlite_path or settings.sqlite_path
     store = SQLiteTreeStore(store_path)
@@ -498,6 +527,7 @@ def run_ablations_from_documents(
             metrics=eval_runs["baseline"].metrics,
             query_count=len(questions),
             timing=eval_runs["baseline"].timing,
+            gold_sanity=eval_runs["baseline"].gold_sanity,
         ),
         AblationScore(
             name=ABLATION_SPECS[AblationName.HIERARCHY].label,
@@ -505,6 +535,7 @@ def run_ablations_from_documents(
             metrics=eval_runs["hierarchy"].metrics,
             query_count=len(questions),
             timing=eval_runs["hierarchy"].timing,
+            gold_sanity=eval_runs["hierarchy"].gold_sanity,
         ),
         AblationScore(
             name=INTERNAL_SPECS["anchor_only"].label,
@@ -512,6 +543,7 @@ def run_ablations_from_documents(
             metrics=eval_runs["anchor_only"].metrics,
             query_count=len(questions),
             timing=eval_runs["anchor_only"].timing,
+            gold_sanity=eval_runs["anchor_only"].gold_sanity,
         ),
         AblationScore(
             name=ABLATION_SPECS[AblationName.FULL].label,
@@ -519,6 +551,7 @@ def run_ablations_from_documents(
             metrics=eval_runs["full"].metrics,
             query_count=len(questions),
             timing=eval_runs["full"].timing,
+            gold_sanity=eval_runs["full"].gold_sanity,
         ),
     ]
     return AblationReport(
@@ -543,11 +576,11 @@ def run_ablations(
 ) -> AblationReport:
     settings = benchmark_eval_settings(settings)
     parser = BenchmarkParser()
-    source_path = Path(qa_path or benchmark_path)
-    fmt = benchmark_format or detect_benchmark_format(source_path)
+    fmt = resolve_run_format(benchmark_path, qa_path, benchmark_format)
 
     parse_start = time.perf_counter()
-    if fmt in {"hotpotqa", "beir", "kilt"}:
+    if fmt in {"hotpotqa", "beir", "kilt", "ragbench"}:
+        source_path = Path(qa_path or benchmark_path)
         documents, questions = load_official_benchmark(source_path, fmt=fmt)
         parse_seconds = round(time.perf_counter() - parse_start, 3)
         report = run_ablations_from_documents(
@@ -576,7 +609,7 @@ def run_ablations(
             budget_tokens=budget_tokens,
             top_k=top_k,
             resolve_gold_ids=resolve_gold_ids,
-            benchmark_format=fmt,
+            benchmark_format="anrag",
         )
     report.time_cost.parse_seconds = parse_seconds
     report.time_cost.total_seconds = round(report.time_cost.total_seconds + parse_seconds, 3)

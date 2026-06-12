@@ -116,6 +116,10 @@ def test_run_ablations_from_documents_reports_metrics(tmp_path):
     payload = report.to_dict()
     assert payload["summary"]["primary_metric"] == "recall_at_k"
     assert "recall_at_10" in payload["summary"]["full_anrag_metrics"]
+    assert "zero_gold_count" in payload["summary"]["gold_sanity"]
+    assert "avg_gold_size" in payload["summary"]["gold_sanity"]
+    assert payload["summary"]["gold_sanity"]["question_count"] == 1
+    assert all("gold_sanity" in score for score in payload["scores"])
 
 
 def test_full_anrag_chunking_marks_anchors():

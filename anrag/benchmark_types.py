@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-BenchmarkFormat = Literal["anrag", "hotpotqa", "beir", "kilt"]
+BenchmarkFormat = Literal["anrag", "hotpotqa", "beir", "kilt", "ragbench"]
 
 
 @dataclass

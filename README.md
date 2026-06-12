@@ -66,7 +66,10 @@ http://127.0.0.1:8000
 python -m anrag.cli ingest path\to\paper.pdf
 python -m anrag.cli query "What is the method?" --mode anchor
 python -m anrag.cli query "What is the method?" --mode baseline
+python -m anrag.cli ablation path\to\ragbench.jsonl --format ragbench --top-k 8
 ```
+
+Benchmark formats currently include `anrag`, `hotpotqa`, `beir`, `kilt`, and `ragbench`. For the primary mixed benchmark, use RAGBench in place of FiQA by exporting rows from the `galileo-ai/ragbench` Hugging Face dataset to JSON or JSONL, then run the ablation command above. RAGBench gold labels are resolved from `all_relevant_sentence_keys` against the row's candidate `documents`.
 
 ## OCR And Vision
 

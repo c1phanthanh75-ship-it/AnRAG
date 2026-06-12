@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from anrag.benchmark_types import BenchmarkFormat, BenchmarkQuestion
 from anrag.models import ParsedBlock
@@ -11,6 +12,60 @@ from anrag.store import SQLiteTreeStore
 from anrag.text_parsing import parse_plain_text
 
 logger = logging.getLogger(__name__)
+
+
+def split_doc_ids(doc_id: str | None) -> list[str]:
+    if not doc_id:
+        return []
+    return [part.strip() for part in doc_id.split("|") if part.strip()]
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8-sig")
+
+
+def _read_json_lines(path: Path) -> list[str]:
+    return [line for line in _read_text(path).splitlines() if line.strip()]
+
+
+def resolve_run_format(
+    benchmark_path: str | Path,
+    qa_path: str | Path | None = None,
+    benchmark_format: BenchmarkFormat | None = None,
+) -> BenchmarkFormat:
+    if benchmark_format:
+        return benchmark_format
+
+    bench = Path(benchmark_path)
+    qa = Path(qa_path) if qa_path else None
+
+    if qa is not None and qa.exists():
+        qa_fmt = detect_benchmark_format(qa)
+        if qa_fmt != "anrag" or qa.suffix.lower() in {".json", ".jsonl"}:
+            return qa_fmt
+
+    if bench.exists():
+        bench_fmt = detect_benchmark_format(bench)
+        if bench_fmt != "anrag" or bench.suffix.lower() in {".json", ".jsonl"} or bench.is_dir():
+            return bench_fmt
+
+    return "anrag"
+
+
+def align_questions_with_documents(
+    questions: list[BenchmarkQuestion],
+    documents: dict[str, list[ParsedBlock]],
+) -> list[BenchmarkQuestion]:
+    if not documents or not questions:
+        return questions
+
+    doc_ids = list(documents.keys())
+    single_doc_id = doc_ids[0] if len(doc_ids) == 1 else None
+
+    for question in questions:
+        if single_doc_id and (not question.doc_id or question.doc_id not in documents):
+            question.doc_id = single_doc_id
+    return questions
 
 
 def document_id_for_corpus(corpus_key: str, namespace: str) -> str:
@@ -32,6 +87,8 @@ def detect_benchmark_format(path: str | Path) -> BenchmarkFormat:
             return "beir"
         sample = _read_json_sample(path)
         if sample:
+            if "documents" in sample and "all_relevant_sentence_keys" in sample:
+                return "ragbench"
             if "supporting_facts" in sample and "context" in sample:
                 return "hotpotqa"
             if "provenance" in sample and "input" in sample:
@@ -44,12 +101,11 @@ def detect_benchmark_format(path: str | Path) -> BenchmarkFormat:
 
 def _read_json_sample(path: Path) -> dict | None:
     if path.suffix.lower() == ".jsonl":
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                return json.loads(line)
+        for line in _read_json_lines(path):
+            return json.loads(line)
         return None
     if path.suffix.lower() == ".json":
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(_read_text(path))
         if isinstance(payload, list) and payload:
             return payload[0]
         if isinstance(payload, dict):
@@ -131,7 +187,7 @@ def load_beir(dataset_dir: str | Path) -> tuple[dict[str, list[ParsedBlock]], li
         )
 
     documents: dict[str, list[ParsedBlock]] = {}
-    for line in corpus_path.read_text(encoding="utf-8").splitlines():
+    for line in corpus_path.read_text(encoding="utf-8-sig").splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
@@ -156,7 +212,7 @@ def load_beir(dataset_dir: str | Path) -> tuple[dict[str, list[ParsedBlock]], li
             qrels.setdefault(query_id, {})[corpus_id] = score
 
     questions: list[BenchmarkQuestion] = []
-    for line in queries_path.read_text(encoding="utf-8").splitlines():
+    for line in queries_path.read_text(encoding="utf-8-sig").splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
@@ -231,18 +287,165 @@ def load_kilt(path: str | Path) -> tuple[dict[str, list[ParsedBlock]], list[Benc
     return documents, questions
 
 
+def load_ragbench(path: str | Path) -> tuple[dict[str, list[ParsedBlock]], list[BenchmarkQuestion]]:
+    path = Path(path)
+    items = _load_json_items(path)
+    documents: dict[str, list[ParsedBlock]] = {}
+    questions: list[BenchmarkQuestion] = []
+
+    for item_index, item in enumerate(items):
+        qid = str(item.get("id") or item.get("example_id") or item_index)
+        dataset_name = str(item.get("dataset_name") or "ragbench")
+        doc_ids: list[str] = []
+        sentence_text_by_key = _ragbench_sentence_text_by_key(item)
+
+        for doc_index, document in enumerate(item.get("documents") or []):
+            doc_id = document_id_for_corpus(f"{dataset_name}|{qid}|{doc_index}", "ragbench")
+            doc_ids.append(doc_id)
+            documents[doc_id] = _ragbench_document_blocks(
+                doc_id=doc_id,
+                doc_index=doc_index,
+                document=document,
+                item=item,
+            )
+
+        relevant_keys = [str(key) for key in item.get("all_relevant_sentence_keys") or []]
+        gold_passages = [
+            sentence_text_by_key[key]
+            for key in relevant_keys
+            if sentence_text_by_key.get(key)
+        ]
+        questions.append(
+            BenchmarkQuestion(
+                question=str(item.get("question") or ""),
+                doc_id="|".join(doc_ids) if doc_ids else None,
+                query_id=qid,
+                gold_passages=gold_passages,
+                benchmark_format="ragbench",
+            )
+        )
+    return documents, questions
+
+
+def _ragbench_sentence_text_by_key(item: dict) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for document_sentences in item.get("documents_sentences") or []:
+        for entry in document_sentences or []:
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                key = str(entry[0])
+                text = str(entry[1]).strip()
+                if key and text:
+                    result[key] = text
+    return result
+
+
+def _ragbench_document_blocks(
+    *,
+    doc_id: str,
+    doc_index: int,
+    document: object,
+    item: dict,
+) -> list[ParsedBlock]:
+    heading_id = f"{doc_id}_title"
+    title, passage = _ragbench_document_title_and_passage(document)
+    heading = title or f"RAGBench Document {doc_index}"
+    blocks = [
+        ParsedBlock(
+            id=heading_id,
+            text=heading,
+            page=1,
+            kind="heading",
+            level=1,
+            hierarchy_path=[heading],
+            metadata={
+                "ragbench_doc_index": doc_index,
+                "ragbench_dataset": item.get("dataset_name"),
+                "layout_role": "heading",
+            },
+        )
+    ]
+
+    sentence_entries = _ragbench_sentences_for_document(item, doc_index)
+    if sentence_entries:
+        for sentence_key, sentence in sentence_entries:
+            blocks.append(
+                ParsedBlock(
+                    id=f"{doc_id}_{sentence_key}",
+                    text=sentence,
+                    page=1,
+                    kind="paragraph",
+                    parent_id=heading_id,
+                    hierarchy_path=[heading],
+                    metadata={
+                        "ragbench_doc_index": doc_index,
+                        "ragbench_sentence_key": sentence_key,
+                        "layout_role": "paragraph",
+                    },
+                )
+            )
+        return blocks
+
+    if passage.strip():
+        blocks.append(
+            ParsedBlock(
+                id=f"{doc_id}_body",
+                text=passage,
+                page=1,
+                kind="paragraph",
+                parent_id=heading_id,
+                hierarchy_path=[heading],
+                metadata={
+                    "ragbench_doc_index": doc_index,
+                    "layout_role": "paragraph",
+                },
+            )
+        )
+    return blocks
+
+
+def _ragbench_document_title_and_passage(document: object) -> tuple[str, str]:
+    text = str(document or "").strip()
+    title_match = re.search(r"(?:^|\n)\s*Title:\s*(.+?)(?:\n\s*Passage:|$)", text, flags=re.DOTALL)
+    passage_match = re.search(r"(?:^|\n)\s*Passage:\s*(.+)$", text, flags=re.DOTALL)
+    title = " ".join(title_match.group(1).split()) if title_match else ""
+    passage = " ".join(passage_match.group(1).split()) if passage_match else text
+    return title, passage
+
+
+def _ragbench_sentences_for_document(item: dict, doc_index: int) -> list[tuple[str, str]]:
+    docs = item.get("documents_sentences") or []
+    if doc_index >= len(docs):
+        return []
+    result: list[tuple[str, str]] = []
+    for entry in docs[doc_index] or []:
+        if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            key = str(entry[0])
+            text = str(entry[1]).strip()
+            if key and text:
+                result.append((key, text))
+    return result
+
+
 def load_anrag_questions(path: str | Path) -> list[BenchmarkQuestion]:
     questions: list[BenchmarkQuestion] = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
+    for line in _read_json_lines(Path(path)):
         row = json.loads(line)
+        passage_keys = row.get("gold_passage_keys") or []
+        gold_chunk_ids = set(row.get("gold_chunk_ids", []))
+        gold_doc_ids = set(row.get("gold_doc_ids", []))
+        gold_passages = list(row.get("gold_passages", []))
+        gold_passage_keys = [(str(title), int(idx)) for title, idx in passage_keys]
+        if not (gold_chunk_ids or gold_doc_ids or gold_passages or gold_passage_keys):
+            gold_doc_ids = set(split_doc_ids(row.get("doc_id")))
         questions.append(
             BenchmarkQuestion(
                 question=row["question"],
                 doc_id=row.get("doc_id"),
                 query_id=row.get("query_id"),
-                gold_chunk_ids=set(row.get("gold_chunk_ids", [])),
+                gold_chunk_ids=gold_chunk_ids,
+                gold_doc_ids=gold_doc_ids,
+                gold_passages=gold_passages,
+                gold_passage_keys=gold_passage_keys,
                 benchmark_format="anrag",
             )
         )
@@ -261,6 +464,8 @@ def load_official_benchmark(
         return load_beir(path)
     if fmt == "kilt":
         return load_kilt(path)
+    if fmt == "ragbench":
+        return load_ragbench(path)
     raise ValueError(f"Path {path} is not an official benchmark dataset (format={fmt})")
 
 
@@ -306,7 +511,13 @@ def build_relevance_map(question, store: SQLiteTreeStore, gold_ids: set[str]) ->
 
 def _resolve_hotpot_passages(question, store: SQLiteTreeStore) -> set[str]:
     gold: set[str] = set()
-    chunks = store.all_chunks(question.doc_id) if question.doc_id else store.all_chunks()
+    doc_ids = split_doc_ids(question.doc_id)
+    chunks = []
+    if doc_ids:
+        for doc_id in doc_ids:
+            chunks.extend(store.all_chunks(doc_id))
+    else:
+        chunks = store.all_chunks()
     key_set = {(title, idx) for title, idx in question.gold_passage_keys}
     for chunk in chunks:
         title = chunk.metadata.get("hotpot_title")
@@ -318,7 +529,13 @@ def _resolve_hotpot_passages(question, store: SQLiteTreeStore) -> set[str]:
 
 def _resolve_passage_texts(question, store: SQLiteTreeStore) -> set[str]:
     gold: set[str] = set()
-    chunks = store.all_chunks(question.doc_id) if question.doc_id else store.all_chunks()
+    doc_ids = split_doc_ids(question.doc_id)
+    chunks = []
+    if doc_ids:
+        for doc_id in doc_ids:
+            chunks.extend(store.all_chunks(doc_id))
+    else:
+        chunks = store.all_chunks()
     targets = [text.strip().lower() for text in question.gold_passages if text.strip()]
     for chunk in chunks:
         body = chunk.text.strip().lower()
@@ -339,8 +556,8 @@ def _find_beir_qrels(root: Path) -> Path | None:
 
 def _load_json_items(path: Path) -> list[dict]:
     if path.suffix.lower() == ".jsonl":
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    payload = json.loads(path.read_text(encoding="utf-8"))
+        return [json.loads(line) for line in _read_json_lines(path)]
+    payload = json.loads(_read_text(path))
     if isinstance(payload, list):
         return payload
     return [payload]

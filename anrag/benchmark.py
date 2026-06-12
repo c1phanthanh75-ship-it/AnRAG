@@ -44,7 +44,7 @@ class BenchmarkParser:
             if suffix == ".pdf":
                 return {document_id_for_file(path): self._parse_pdf(path, **pdf_kwargs)}
             if suffix in {".txt", ".md"}:
-                text = path.read_text(encoding="utf-8")
+                text = path.read_text(encoding="utf-8-sig")
                 doc_id = document_id_for_file(path)
                 return {doc_id: self.parse_text(text, doc_id=doc_id)}
             if suffix in {".json", ".jsonl"}:
@@ -64,7 +64,7 @@ class BenchmarkParser:
             for pdf_path in sorted(path.rglob("*.pdf")):
                 documents[document_id_for_file(pdf_path)] = self._parse_pdf(pdf_path, **pdf_kwargs)
             for text_path in sorted(path.rglob("*.txt")):
-                text = text_path.read_text(encoding="utf-8")
+                text = text_path.read_text(encoding="utf-8-sig")
                 documents[document_id_for_file(text_path)] = self.parse_text(
                     text,
                     doc_id=document_id_for_file(text_path),

@@ -74,10 +74,16 @@ def get_settings() -> Settings:
 
 def benchmark_eval_settings(base: Settings | None = None) -> Settings:
     """Settings for retrieval-only benchmark runs without LLM, VLM, or OCR noise."""
-    settings = (base or get_settings()).model_copy(
+    base_settings = base or get_settings()
+    settings = base_settings.model_copy(
         update={
             "enable_ocr": False,
             "enable_vision_caption": False,
+            "data_dir": Path("data/benchmark"),
+            "sqlite_path": Path("data/benchmark/anrag.sqlite3"),
+            "index_dir": Path("data/benchmark/indexes"),
+            "upload_dir": Path("data/benchmark/uploads"),
+            "visual_dir": Path("data/benchmark/visuals"),
         }
     )
     settings.ensure_dirs()

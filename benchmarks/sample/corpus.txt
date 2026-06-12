@@ -1,0 +1,14 @@
+# Introduction
+
+Anchor retrieval finds section-level signals before expanding local context.
+Hybrid dense and sparse search improves recall on keyword-heavy queries.
+
+## Method
+
+The method is defined as anchor-first retrieval with tree expansion.
+Parent-child hierarchy preserves document structure during chunking.
+
+## Evaluation
+
+Benchmarks compare Plain RAG, hierarchical chunking, and full AnchorRAG.
+Metrics include recall at k, MRR, and nDCG at 10.

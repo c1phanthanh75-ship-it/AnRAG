@@ -5,9 +5,12 @@ from anrag.benchmark import BenchmarkParser
 from anrag.benchmark_gt import (
     detect_benchmark_format,
     load_beir,
+    load_anrag_questions,
     load_hotpotqa,
     load_kilt,
+    load_ragbench,
     resolve_gold_official,
+    split_doc_ids,
 )
 from anrag.benchmark_types import BenchmarkQuestion
 from anrag.chunking import semantic_chunking
@@ -72,6 +75,48 @@ def test_hotpotqa_official_gold_resolution(tmp_path):
     assert len(gold) == 1
 
 
+def test_load_anrag_questions_derives_doc_gold_from_simplified_doc_id(tmp_path):
+    path = tmp_path / "qa.jsonl"
+    path.write_text(
+        '{"question": "What is AnchorRAG?", "doc_id": "doc_a"}\n',
+        encoding="utf-8",
+    )
+
+    questions = load_anrag_questions(path)
+
+    assert questions[0].gold_doc_ids == {"doc_a"}
+
+
+def test_load_anrag_questions_keeps_explicit_gold_authoritative(tmp_path):
+    path = tmp_path / "qa.jsonl"
+    path.write_text(
+        '{"question": "What is AnchorRAG?", "doc_id": "doc_a", '
+        '"gold_passages": ["AnchorRAG uses anchors."]}\n',
+        encoding="utf-8",
+    )
+
+    questions = load_anrag_questions(path)
+
+    assert questions[0].gold_doc_ids == set()
+    assert questions[0].gold_passages == ["AnchorRAG uses anchors."]
+
+
+def test_split_doc_ids_trims_pipe_separated_doc_ids():
+    assert split_doc_ids(" doc_a |doc_b|| ") == ["doc_a", "doc_b"]
+
+
+def test_load_anrag_questions_derives_multiple_doc_gold_ids(tmp_path):
+    path = tmp_path / "qa.jsonl"
+    path.write_text(
+        '{"question": "Which docs are relevant?", "doc_id": "doc_a| doc_b"}\n',
+        encoding="utf-8",
+    )
+
+    questions = load_anrag_questions(path)
+
+    assert questions[0].gold_doc_ids == {"doc_a", "doc_b"}
+
+
 def test_load_beir_layout(tmp_path):
     root = tmp_path / "fiqa"
     root.mkdir()
@@ -113,3 +158,74 @@ def test_load_kilt_provenance(tmp_path):
     documents, questions = load_kilt(path)
     assert questions[0].benchmark_format == "kilt"
     assert questions[0].gold_passages
+
+
+def test_detect_and_load_ragbench_layout(tmp_path):
+    path = tmp_path / "ragbench.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "rb1",
+                "question": "What label was used?",
+                "documents": [
+                    "Title: Study A\nPassage: The cells were treated with buffer.",
+                    "Title: Study B\nPassage: Untreated cells were labeled with Calcein AM.",
+                ],
+                "documents_sentences": [
+                    [["0a", "Title: Study A"], ["0b", "The cells were treated with buffer."]],
+                    [["1a", "Title: Study B"], ["1b", "Untreated cells were labeled with Calcein AM."]],
+                ],
+                "all_relevant_sentence_keys": ["1b"],
+                "dataset_name": "unit",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert detect_benchmark_format(path) == "ragbench"
+    documents, questions = load_ragbench(path)
+
+    assert len(documents) == 2
+    assert questions[0].benchmark_format == "ragbench"
+    assert questions[0].gold_passages == ["Untreated cells were labeled with Calcein AM."]
+    assert len(split_doc_ids(questions[0].doc_id)) == 2
+
+
+def test_ragbench_official_gold_resolution(tmp_path):
+    path = tmp_path / "ragbench.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "rb1",
+                "question": "What label was used?",
+                "documents": [
+                    "Title: Study A\nPassage: The cells were treated with buffer.",
+                    "Title: Study B\nPassage: Untreated cells were labeled with Calcein AM.",
+                ],
+                "documents_sentences": [
+                    [["0a", "Title: Study A"], ["0b", "The cells were treated with buffer."]],
+                    [["1a", "Title: Study B"], ["1b", "Untreated cells were labeled with Calcein AM."]],
+                ],
+                "all_relevant_sentence_keys": ["1b"],
+                "dataset_name": "unit",
+            }
+        ),
+        encoding="utf-8",
+    )
+    documents, questions = load_ragbench(path)
+    settings = Settings(
+        sqlite_path=tmp_path / "ragbench.sqlite3",
+        index_dir=tmp_path / "indexes",
+        data_dir=tmp_path,
+        upload_dir=tmp_path / "uploads",
+        visual_dir=tmp_path / "visuals",
+    )
+    settings.ensure_dirs()
+    store = SQLiteTreeStore(settings.sqlite_path)
+    for doc_id, blocks in documents.items():
+        ingest_blocks(doc_id, "ragbench.jsonl", "ragbench.jsonl", blocks, settings, store)
+
+    gold = resolve_gold_official(questions[0], store)
+
+    assert len(gold) == 1

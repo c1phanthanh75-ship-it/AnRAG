@@ -67,7 +67,12 @@ def main() -> None:
     ablation_cmd = sub.add_parser("ablation")
     ablation_cmd.add_argument("benchmark", help="PDF file or directory of PDFs")
     ablation_cmd.add_argument("--qa", default=None, help="Optional QA file (anrag JSONL, HotpotQA, BeIR dir, KILT)")
-    ablation_cmd.add_argument("--format", dest="benchmark_format", default=None, choices=["anrag", "hotpotqa", "beir", "kilt"])
+    ablation_cmd.add_argument(
+        "--format",
+        dest="benchmark_format",
+        default=None,
+        choices=["anrag", "hotpotqa", "beir", "kilt", "ragbench"],
+    )
     ablation_cmd.add_argument("--top-k", type=int, default=8)
     ablation_cmd.add_argument("--budget", type=int, default=None)
 

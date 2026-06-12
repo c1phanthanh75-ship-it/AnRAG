@@ -1,0 +1,3 @@
+{"question": "Anchor retrieval finds section-level", "gold_passages": ["Anchor retrieval finds section-level signals before expanding local context"]}
+{"question": "anchor-first retrieval with tree expansion", "gold_passages": ["The method is defined as anchor-first retrieval with tree expansion"]}
+{"question": "recall at k MRR nDCG", "gold_passages": ["Metrics include recall at k, MRR, and nDCG at 10"]}

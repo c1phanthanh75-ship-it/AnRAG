@@ -1,17 +1,19 @@
-# AnRAG benchmark dependencies (retrieval-only eval: no LLM / VLM / OCR)
-# Python >= 3.11
+# AnRAG benchmark — Python >= 3.11
 #
-# Install:
+# Setup:
 #   pip install -r requirements.txt
+#   pip install -e .
 #
-# Run benchmark:
-#   python -m anrag.cli ablation path\to\corpus.pdf --qa path\to\qa.jsonl
-#   python -m anrag.cli ablation path\to\beir\fiqa --format beir
-#   python -m anrag.cli ablation path\to\hotpot_dev.jsonl --format hotpotqa
-#   curl -X POST http://127.0.0.1:8000/api/benchmark -H "Content-Type: application/json" \
-#     -d "{\"benchmark_path\":\"path/to/corpus.pdf\",\"qa_path\":\"path/to/qa.jsonl\"}"
+# Quick run (sample corpus):
+#   python -m anrag.cli ablation benchmarks/sample/corpus.txt --qa benchmarks/sample/qa.jsonl
+#   powershell -File scripts/run_benchmark.ps1
+#
+# Official benchmarks:
+#   python -m anrag.cli ablation path/to/beir/fiqa --format beir
+#   python -m anrag.cli ablation path/to/hotpot_dev.jsonl --format hotpotqa
+#   python -m anrag.cli ablation path/to/kilt.jsonl --format kilt
 
-# Core
+# Core (required)
 pydantic>=2.0
 pydantic-settings>=2.0
 numpy>=1.24
@@ -20,13 +22,13 @@ rank-bm25>=0.2.2
 faiss-cpu>=1.7.4
 PyMuPDF>=1.23
 
-# Semantic embeddings (recommended for benchmark quality)
+# Semantic embeddings (strongly recommended for benchmark)
 sentence-transformers>=2.2.2
 
-# Optional: API server for /api/benchmark
+# Optional: API / upload
 fastapi>=0.100
 uvicorn>=0.23
 python-multipart>=0.0.6
 
-# Optional: validation
+# Optional: tests
 pytest>=7.4
