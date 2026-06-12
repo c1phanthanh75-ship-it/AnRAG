@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AnchorRAG</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>AnchorRAG</h1>
+          <p>PDF research prototype with tree-aware retrieval.</p>
+        </div>
+        <form id="uploadForm" class="upload">
+          <input id="pdfInput" type="file" accept="application/pdf" />
+          <button type="submit">Upload PDF</button>
+        </form>
+      </section>
+
+      <section class="workspace">
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>Documents</h2>
+            <button id="refreshDocs" type="button">Refresh</button>
+          </div>
+          <div id="documents" class="doc-list"></div>
+        </aside>
+
+        <section class="main-panel">
+          <form id="queryForm" class="query-box">
+            <textarea id="queryInput" rows="4" placeholder="Ask in English or Vietnamese..."></textarea>
+            <div class="controls">
+              <label>
+                <span>Mode</span>
+                <select id="modeInput">
+                  <option value="anchor">AnchorRAG</option>
+                  <option value="baseline">Plain RAG</option>
+                </select>
+              </label>
+              <label>
+                <span>Budget</span>
+                <input id="budgetInput" type="number" min="256" step="128" value="1800" />
+              </label>
+              <label class="check">
+                <input id="answerInput" type="checkbox" checked />
+                <span>Generate answer</span>
+              </label>
+              <button type="submit">Run</button>
+            </div>
+          </form>
+
+          <div id="status" class="status"></div>
+          <section id="answer" class="answer"></section>
+          <section id="reasoning" class="reasoning"></section>
+          <section id="trace" class="trace"></section>
+          <section id="contexts" class="contexts"></section>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

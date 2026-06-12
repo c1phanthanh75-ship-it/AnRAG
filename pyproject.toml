@@ -1,0 +1,22 @@
+[project]
+name = "anrag"
+version = "0.1.0"
+description = "AnchorRAG research prototype with tree-aware retrieval."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "python-multipart",
+  "PyMuPDF",
+  "faiss-cpu",
+  "numpy",
+  "scikit-learn",
+  "rank-bm25",
+  "ollama",
+  "pydantic",
+  "pydantic-settings",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

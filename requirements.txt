@@ -1,0 +1,32 @@
+# AnRAG benchmark dependencies (retrieval-only eval: no LLM / VLM / OCR)
+# Python >= 3.11
+#
+# Install:
+#   pip install -r requirements.txt
+#
+# Run benchmark:
+#   python -m anrag.cli ablation path\to\corpus.pdf --qa path\to\qa.jsonl
+#   python -m anrag.cli ablation path\to\beir\fiqa --format beir
+#   python -m anrag.cli ablation path\to\hotpot_dev.jsonl --format hotpotqa
+#   curl -X POST http://127.0.0.1:8000/api/benchmark -H "Content-Type: application/json" \
+#     -d "{\"benchmark_path\":\"path/to/corpus.pdf\",\"qa_path\":\"path/to/qa.jsonl\"}"
+
+# Core
+pydantic>=2.0
+pydantic-settings>=2.0
+numpy>=1.24
+scikit-learn>=1.3
+rank-bm25>=0.2.2
+faiss-cpu>=1.7.4
+PyMuPDF>=1.23
+
+# Semantic embeddings (recommended for benchmark quality)
+sentence-transformers>=2.2.2
+
+# Optional: API server for /api/benchmark
+fastapi>=0.100
+uvicorn>=0.23
+python-multipart>=0.0.6
+
+# Optional: validation
+pytest>=7.4
