@@ -309,6 +309,11 @@ def _retrieve(
     *,
     rewrite_query: bool = False,
 ) -> tuple[list[str], float]:
+<<<<<<< HEAD
+=======
+    # FIX: resolve doc_ids per-question so retrieval is scoped correctly
+    # (resolves merge conflict — fa13e49 version is correct)
+>>>>>>> c546ffd078db1c8e8e571a94df52512945495a0e
     doc_ids = split_doc_ids(question.doc_id) or None
     common = {
         "budget_tokens": budget_tokens,
