@@ -183,17 +183,7 @@ def load_hotpotqa(path: str | Path) -> tuple[dict[str, list[ParsedBlock]], list[
                 question=item["question"],
                 doc_id=doc_id,
                 query_id=qid,
-<<<<<<< HEAD
                 gold_passage_keys=gold_passage_keys,
-=======
-                gold_passage_keys=[
-                    (str(title), int(sent_id))
-                    for title, sent_id in zip(
-                        item.get("supporting_facts", {}).get("title", []),
-                        item.get("supporting_facts", {}).get("sent_id", []),
-                    )
-                ],
->>>>>>> c546ffd078db1c8e8e571a94df52512945495a0e
                 benchmark_format="hotpotqa",
             )
         )
