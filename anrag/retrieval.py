@@ -231,7 +231,13 @@ class AnchorRetriever:
         anchors = self._top_p(fused_hits, top_p)
         confidence = max((hit.score for hit in anchors), default=0.0)
 
-        candidates = self.store.get_chunks([hit.chunk_id for hit in anchors])
+        seen = set()
+        unique_chunk_ids = []
+        for hit in anchors:
+            if hit.chunk_id not in seen:
+                seen.add(hit.chunk_id)
+                unique_chunk_ids.append(hit.chunk_id)
+        candidates = self.store.get_chunks(unique_chunk_ids)
         if self.reranker:
             candidates = self.reranker.rerank(rewritten, candidates)
         contexts = self.budget_select(candidates, budget_tokens)
@@ -276,7 +282,13 @@ class AnchorRetriever:
                 valid_ids.update(chunk.id for chunk in self.store.all_chunks(did))
 
         hits, fusion_mode = self._hybrid_chunk_search(rewritten, top_k=top_k, valid_ids=valid_ids)
-        candidates = self.store.get_chunks([hit.chunk_id for hit in hits])
+        seen = set()
+        unique_chunk_ids = []
+        for hit in hits:
+            if hit.chunk_id not in seen:
+                seen.add(hit.chunk_id)
+                unique_chunk_ids.append(hit.chunk_id)
+        candidates = self.store.get_chunks(unique_chunk_ids)
         if self.reranker:
             candidates = self.reranker.rerank(rewritten, candidates)
         contexts = self.budget_select(candidates, budget_tokens)
