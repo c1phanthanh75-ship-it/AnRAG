@@ -265,7 +265,7 @@ class AnchorRetriever:
         self,
         query: str,
         budget_tokens: int = 1200,
-        top_k: int = 8,
+        top_k: int = 20,
         generate_answer: bool = True,
         stream_answer: bool = False,
         doc_ids: list[str] | None = None,
@@ -354,11 +354,17 @@ class AnchorRetriever:
         if not candidates:
             return []
         selected: list[Chunk] = []
+        seen_texts: set[str] = set()
         used = 0
         for chunk in candidates:
+            # Normalize text (lowercase, strip whitespace) to identify duplicates
+            norm_text = " ".join(chunk.text.lower().split())
+            if norm_text in seen_texts:
+                continue
             cost = chunk.token_count or token_count(chunk.text)
             if used + cost <= budget_tokens:
                 selected.append(chunk)
+                seen_texts.add(norm_text)
                 used += cost
         return selected
 
