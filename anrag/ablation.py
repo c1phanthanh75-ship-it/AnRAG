@@ -309,11 +309,7 @@ def _retrieve(
     *,
     rewrite_query: bool = False,
 ) -> tuple[list[str], float]:
-<<<<<<< HEAD
-    doc_ids = None
-=======
     doc_ids = split_doc_ids(question.doc_id) or None
->>>>>>> fa13e49 (Fix gold chunk benchmark AnRAG)
     common = {
         "budget_tokens": budget_tokens,
         "top_k": top_k,

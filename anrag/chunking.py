@@ -55,6 +55,18 @@ def fixed_chunking(
     page_end = blocks[-1].page_end or blocks[-1].page if blocks else page_start
 
     for part_index, part in enumerate(chunk_text_by_tokens(text, max_tokens, overlap_tokens)):
+        metadata = {"chunk_role": "fixed", "part_index": part_index}
+        overlapping = [b for b in blocks if b.text.strip() and " ".join(b.text.split()) in part]
+        hotpot_titles = []
+        hotpot_sent_indices = []
+        for b in overlapping:
+            if "hotpot_title" in b.metadata and "hotpot_sent_idx" in b.metadata:
+                hotpot_titles.append(b.metadata["hotpot_title"])
+                hotpot_sent_indices.append(b.metadata["hotpot_sent_idx"])
+        if hotpot_titles:
+            metadata["hotpot_titles"] = hotpot_titles
+            metadata["hotpot_sent_indices"] = hotpot_sent_indices
+
         chunks.append(
             Chunk(
                 id=_chunk_id(doc_id, part_index, part),
@@ -63,7 +75,7 @@ def fixed_chunking(
                 page_start=page_start,
                 page_end=page_end,
                 token_count=token_count(part),
-                metadata={"chunk_role": "fixed", "part_index": part_index},
+                metadata=metadata,
             )
         )
 

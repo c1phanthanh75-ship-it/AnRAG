@@ -94,9 +94,7 @@ class AnchorRetriever:
     ) -> tuple[list[SearchHit], str]:
         fetch_k = max(top_k * 3, 20)
 
-        dense_hits = dense_index.search(query, top_k=fetch_k)
-        if valid_ids:
-            dense_hits = [hit for hit in dense_hits if hit.chunk_id in valid_ids]
+        dense_hits = dense_index.search(query, top_k=fetch_k, valid_ids=valid_ids)
 
         if valid_ids:
             pool = [chunk for chunk in chunk_pool if chunk.id in valid_ids]

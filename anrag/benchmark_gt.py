@@ -114,12 +114,19 @@ def _read_json_sample(path: Path) -> dict | None:
 
 
 def parse_hotpot_context(
-    context: list[list[object]],
+    context: list[list[object]] | dict[str, list],
     *,
     doc_id: str,
 ) -> list[ParsedBlock]:
     blocks: list[ParsedBlock] = []
-    for entry in context:
+    if isinstance(context, dict):
+        titles = context.get("title", [])
+        sentences_list = context.get("sentences", [])
+        entries = list(zip(titles, sentences_list))
+    else:
+        entries = context
+
+    for entry in entries:
         title = str(entry[0])
         sentences = [str(item) for item in entry[1]]
         heading_id = f"hdr_{hashlib.sha1(f'{doc_id}|{title}'.encode()).hexdigest()[:16]}"
@@ -164,12 +171,19 @@ def load_hotpotqa(path: str | Path) -> tuple[dict[str, list[ParsedBlock]], list[
         qid = str(item.get("_id") or item.get("id") or len(questions))
         doc_id = document_id_for_corpus(qid, "hotpotqa")
         documents[doc_id] = parse_hotpot_context(item["context"], doc_id=doc_id)
+        if isinstance(item["supporting_facts"], dict):
+            titles = item["supporting_facts"].get("title", [])
+            indices = item["supporting_facts"].get("sent_id", [])
+            gold_passage_keys = [(str(t), int(i)) for t, i in zip(titles, indices)]
+        else:
+            gold_passage_keys = [(str(title), int(idx)) for title, idx in item["supporting_facts"]]
+
         questions.append(
             BenchmarkQuestion(
                 question=item["question"],
                 doc_id=doc_id,
                 query_id=qid,
-                gold_passage_keys=[(str(title), int(idx)) for title, idx in item["supporting_facts"]],
+                gold_passage_keys=gold_passage_keys,
                 benchmark_format="hotpotqa",
             )
         )
@@ -524,6 +538,15 @@ def _resolve_hotpot_passages(question, store: SQLiteTreeStore) -> set[str]:
         sent_idx = chunk.metadata.get("hotpot_sent_idx")
         if title is not None and sent_idx is not None and (str(title), int(sent_idx)) in key_set:
             gold.add(chunk.id)
+            continue
+
+        titles = chunk.metadata.get("hotpot_titles")
+        sent_indices = chunk.metadata.get("hotpot_sent_indices")
+        if titles and sent_indices and len(titles) == len(sent_indices):
+            for t, idx in zip(titles, sent_indices):
+                if (str(t), int(idx)) in key_set:
+                    gold.add(chunk.id)
+                    break
     return gold
 
 

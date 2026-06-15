@@ -40,19 +40,25 @@ class DenseIndex:
         self.ids = json.loads(self.ids_path.read_text(encoding="utf-8"))
         return True
 
-    def search(self, query: str, top_k: int = 8) -> list[SearchHit]:
+    def search(self, query: str, top_k: int = 8, valid_ids: set[str] | None = None) -> list[SearchHit]:
         if self.index is None:
             if not self.load():
                 return []
         if not self.ids or self.index is None:
             return []
         vector = self.embedder.encode([query])
-        scores, positions = self.index.search(vector, min(top_k, len(self.ids)))
+        search_k = len(self.ids) if valid_ids is not None else min(top_k, len(self.ids))
+        scores, positions = self.index.search(vector, search_k)
         hits: list[SearchHit] = []
         for score, pos in zip(scores[0], positions[0], strict=False):
             if pos < 0:
                 continue
-            hits.append(SearchHit(chunk_id=self.ids[pos], score=float(score), source=self.namespace))
+            chunk_id = self.ids[pos]
+            if valid_ids is not None and chunk_id not in valid_ids:
+                continue
+            hits.append(SearchHit(chunk_id=chunk_id, score=float(score), source=self.namespace))
+            if valid_ids is not None and len(hits) >= top_k:
+                break
         return hits
 
 
